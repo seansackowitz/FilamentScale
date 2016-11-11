@@ -3,26 +3,102 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <hx711.h>
+#include <eeprom.h>
 
-#define OLED_RESET 4
-Adafruit_SSD1306 display(OLED_RESET);
-Hx711 scale(14, 15);
+#define PIN_TARE 2
+#define PIN_DIN 14
+#define PIN_SLK 15
 
-float tareOffset = 0;
+Adafruit_SSD1306 display(-1);
+Hx711 scale(PIN_DIN, PIN_SLK);
+
+long eepromTareOffset = 0;
+float scaleRatio = 1.0f;
+bool tareButtonPressed = false;
 
 void setup()
 {
-	Serial.begin(9600);
+	//Initialize Scale
+	scale.setOffset(0);
+	scale.setScale(0);
+	long eepromTareOffset = EEPROMReadlong(0);
 
+	//Initialize Display
+	display.begin(SSD1306_SWITCHCAPVCC, 0x3c);
+
+	//Initialize Tare Button
+	pinMode(PIN_TARE, INPUT);
 }
 
 void loop()
 {
-
+	Display();
+	TareButton();
 }
 
+void Display()
+{
+	display.clearDisplay();
+
+	display.setTextSize(36);
+	display.print(GetGrams(), 1);
+	display.println("g");
+
+	display.setTextSize(12);
+	display.println();
+	display.println("            Tare");
+
+	display.display();
+}
+
+float GetGrams()
+{
+	return (scale.averageValue() - eepromTareOffset) / scaleRatio;
+}
+
+void TareButton()
+{
+	if (digitalRead(PIN_TARE) == HIGH)
+	{
+		//Tare only when the button is first pressed down
+		if (tareButtonPressed == false)
+			Tare();
+		tareButtonPressed = true;
+	}
+	else
+		tareButtonPressed = false;
+}
 
 void Tare()
 {
-	scale.setOffset(scale.averageValue());
+	eepromTareOffset = scale.averageValue();
+	EEPROMWriteLong(0, eepromTareOffset);
+}
+
+long EEPROMReadlong(long address)
+{
+	//Read the 4 bytes from the eeprom memory.
+	long four = EEPROM.read(address);
+	long three = EEPROM.read(address + 1);
+	long two = EEPROM.read(address + 2);
+	long one = EEPROM.read(address + 3);
+
+	//Return the recomposed long by using bitshift.
+	return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
+}
+
+void EEPROMWriteLong(int address, long value)
+{
+	//Decomposition from a long to 4 bytes by using bitshift.
+	//One = Most significant -> Four = Least significant byte
+	byte four = (value & 0xFF);
+	byte three = ((value >> 8) & 0xFF);
+	byte two = ((value >> 16) & 0xFF);
+	byte one = ((value >> 24) & 0xFF);
+
+	//Write the 4 bytes into the eeprom memory.
+	EEPROM.write(address, four);
+	EEPROM.write(address + 1, three);
+	EEPROM.write(address + 2, two);
+	EEPROM.write(address + 3, one);
 }
